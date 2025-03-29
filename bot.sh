@@ -27,21 +27,25 @@ grep -oP '<li>.*?<a .*?</a>.*?</li>' | head -n 3 | while read -r line; do
     echo "$link | $text" >> "$TMP_FILE"
 done
 
+# === FETCH EXISTING NOTICES FROM FIREBASE ===
+EXISTING_NOTICES=$(curl -s "$FIREBASE_URL/notices.json" | jq -r '.[].link' 2>/dev/null)
+SENT_NOTICES=$(curl -s "$FIREBASE_URL/sent_notices.json" | jq -r 'keys[]' 2>/dev/null)
+
 # === PROCESS NOTICES ===
 while IFS='|' read -r link text; do
-    # Check if the notice is already in Firebase (/notices)
-    EXISTING_NOTICE=$(curl -s "$FIREBASE_URL/notices.json" | grep -o "$link")
-
-    # Save the notice if it's new
-    if [ -z "$EXISTING_NOTICE" ]; then
+    # Check if the notice already exists in Firebase
+    if echo "$EXISTING_NOTICES" | grep -q "$link"; then
+        echo "Notice already in database: $link"
+    else
+        # Save the notice in Firebase
         JSON_PAYLOAD=$(jq -n --arg link "$link" --arg text "$text" '{ "link": $link, "text": $text, "timestamp": now | floor }')
         curl -s -X POST -d "$JSON_PAYLOAD" "$FIREBASE_URL/notices.json"
     fi
 
-    # Check if the notice was already sent to Telegram (/sent_notices)
-    SENT_NOTICE=$(curl -s "$FIREBASE_URL/sent_notices.json" | grep -o "$link")
-
-    if [ -z "$SENT_NOTICE" ]; then
+    # Check if the notice was already sent to Telegram
+    if echo "$SENT_NOTICES" | grep -q "$link"; then
+        echo "Notice already sent: $text"
+    else
         # Send the notice to Telegram
         escaped_text=$(echo "$text" | sed 's/&/&amp;/g; s/</&lt;/g; s/>/&gt;/g')
         message="<b>📢 New Notice:</b> <a href=\"$link\">$escaped_text</a>"
@@ -52,12 +56,11 @@ while IFS='|' read -r link text; do
 
         echo "Telegram Response: $response"
 
-        # Mark the notice as sent in Firebase (/sent_notices)
-        curl -s -X PUT -d "true" "$FIREBASE_URL/sent_notices/$(echo -n $link | md5sum | cut -d ' ' -f1).json"
+        # Mark the notice as sent in Firebase
+        SENT_PAYLOAD=$(jq -n '{ "sent": true, "timestamp": now | floor }')
+        curl -s -X PUT -d "$SENT_PAYLOAD" "$FIREBASE_URL/sent_notices/$(echo -n $link | md5sum | cut -d ' ' -f1).json"
 
         echo "Sent: $link | $text"
-    else
-        echo "Notice already sent: $text"
     fi
 done < "$TMP_FILE"
 
