@@ -1,0 +1,25 @@
+name: Fetch Notices & Send to Telegram
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"  # Runs every 5 minutes
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  fetch_and_notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install Dependencies
+        run: sudo apt-get install jq
+
+      - name: Run Fetch Script
+        env:
+          URL: ${{ secrets.URL }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: bash bot.sh
